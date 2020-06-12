@@ -1,0 +1,741 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+A.df
+```
+```{r}
+colnames(A.df)
+```
+```{r}
+```
+
+
+```{r}
+A.df$screen_name
+```
+
+```{r}
+install.packages('data.table')
+library(data.table)
+setDT(A.df) 
+```
+
+
+```{r}
+A.df[country == "United States" | country == "Spain"| country == "Italy"| country == "France"| country == "United Kingdom"]
+```
+```{r}
+A.df[,.(.N), by = .(country)] [order(-N)]
+```
+```{r}
+A.df[,.(TotalTweets = .N, 
+             total_reactions=sum(retweet_count, na.rm = TRUE) + 
+                sum(favorite_count, na.rm = TRUE)+
+                sum(reply_count, na.rm = TRUE)+
+                sum(quote_count, na.rm = TRUE)), 
+          by = .(country)] [order(-total_reactions)]
+```
+```{r}
+library(magrittr)
+A.df[, chunk:= created_at %>% cut(breaks = "5 min") %>% as.factor ]
+```
+```{r}
+library(quanteda)
+library(ggplot2)
+```
+```{r}
+#Types refers the number of distinct tokens
+ggplot(A.df, aes(x=created_at, y=(friends_count+1))) +
+   geom_point() +
+   scale_x_datetime(name = "Time") +
+   scale_y_log10(name = "Potentia Reach", breaks = c(10,100,1000,10000) ) +
+   theme_minimal()
+```
+
+```{r}
+ggplot(A.df, aes(x=created_at)) +
+   geom_histogram(aes(y=..count..), #make histogram
+                  binwidth=60*60, #each bar contains number of tweets during 60 s
+                  colour="blue", #colour of frame of bars
+                  fill="blue", #fill colour for bars
+                  alpha=0.8) + # bars are semi transparant
+   ggtitle(paste0("Activity ",num_tweets,"tweets")) + #title
+   scale_y_continuous(name="Number of Tweets per minute") + 
+   scale_x_datetime(name = "Time") +
+   theme_minimal(base_family="Times New Roman")
+```
+The number of tweets vary a lot in the day time that in the early morning number of tweets is about 2750 tweet per hour, after 6am, number of tweets increases dramatically and attend a pic of 4000 tweet per minute, then it keep increasing until it attend other pic of 5000 tweet at 16:00 then it decreases.The average number of tweets per hour is about 3000 tweet.
+```{r}
+ggplot(A.df, aes(
+   x=created_at, 
+   y=(friends_count+1), 
+   size = favorite_count + reply_count + quote_count + retweet_count )
+   ) +
+   geom_point(aes(size = retweet_count), alpha = 0.5) +
+   ggtitle(paste0("Each dot is a tweet matching '",query,"'")) +
+   scale_y_log10(name="Potential Reach",breaks = c(10,100,1000,10000) ) +
+   scale_x_datetime(name = "Time") +
+   scale_size_continuous(name="Retweets") +
+   theme_minimal()
+```
+```{r}
+USA=A.df[A.df$country=='United States']
+
+ggplot(USA, aes(
+   x=created_at, 
+   y=(friends_count+1), 
+   size = favorite_count + reply_count + quote_count + retweet_count )
+   ) +
+   geom_point(aes(size = retweet_count), alpha = 0.5) +
+   ggtitle(paste0("Each dot is a tweet matching '",query,"'")) +
+   scale_y_log10(name="Potential Reach",breaks = c(10,100,1000,10000) ) +
+   scale_x_datetime(name = "Time") +
+   scale_size_continuous(name="Retweets") +
+   theme_minimal()
+```
+Number of retweets 
+```{r}
+tok_tweets <- A.df$text %>% 
+   gsub("#","", . ) %>% 
+   corpus %>% 
+   tokens(what="word",
+          remove_numbers=TRUE,
+          remove_punct=TRUE,
+          remove_symbols=TRUE,
+          remove_separators=TRUE,
+          remove_url=TRUE)
+head(tok_tweets,n=2)
+```
+```{r}
+stopwords(language = "en")
+```
+```{r}
+tok_tweets <- tokens_remove(tok_tweets,stopwords(language = "en"))
+head(tok_tweets,n=2)
+```
+```{r}
+```
+
+
+```{r}
+words.to.remove <- c(stopwords("english"),'corona',"covid","covid-19","Corona's","@corona","@covid-19","#corona","virus","Virus","@virus","#covid-19")
+dfmat_corp_twitter <- A.df$text %>% corpus() %>% 
+   dfm(remove = words.to.remove,
+                          what = "word",
+                          stem = TRUE, 
+                          remove_punct = TRUE,
+                          remove_url=TRUE)
+```
+
+```{r}
+dfFreq <- textstat_frequency(dfmat_corp_twitter) %>% as.data.table
+ggplot(dfFreq[1:20,], aes(x=feature, y=frequency)) + 
+   geom_col() +
+   coord_flip() +
+   theme_minimal()
+```
+
+```{r}
+ggplot(dfFreq[1:20,], aes(x=reorder(feature, -rank), y=frequency)) + 
+   geom_col() +
+   coord_flip() +
+   labs(x = "Stemmed word", y = "Count") +
+   theme_minimal(base_family="")
+```
+```{r}
+textplot_wordcloud(dfmat_corp_twitter, min_count = 6, random_order = FALSE,
+                   rotation = .25,
+                   color = RColorBrewer::brewer.pal(8, "Dark2"))
+```
+
+```{r}
+dfFreq_long_top20 = dfFreq[rank <= 20] %>% 
+   melt(id.vars = c("feature","group","rank"),
+        measure.vars = c("frequency","docfreq")
+)
+```
+
+```{r}
+ggplot(dfFreq_long_top20, aes(x=reorder(feature,-rank), y=value, fill = variable)) + 
+   geom_bar(position="dodge", stat="identity") +
+   scale_x_discrete() + 
+   labs(x = "", y = "Occurances", fill = "") +
+   coord_flip() +
+   theme_minimal()
+```
+```{r}
+TokensStemmed <- tokens_remove(tok_tweets, words.to.remove)
+
+dfm2 <- dfm(tokens_ngrams(TokensStemmed,n=2))
+
+dfFreq2 <- textstat_frequency(dfm2)
+
+ggplot(dfFreq2[1:20,], aes(x=reorder(feature, frequency), y=frequency)) + 
+   geom_col() +
+   coord_flip() +
+   scale_x_discrete(name = "2 gram") +
+  theme()
+```
+
+
+```{r}
+require(topicmodels)
+dtm <- convert(dfmat_corp_twitter, to = "topicmodels")
+lda <- LDA(dtm, k = 6, control=list(seed=12))
+```
+```{r}
+terms(lda, 8) %>% utf8::utf8_print()
+
+```
+
+```{r}
+topicAssignment = 
+   data.table(
+      index = lda %>% 
+         topics %>% 
+         names %>% 
+         gsub("text","", .) 
+      %>% as.integer,
+      topic = lda %>% topics
+   )
+topicAssignment %>% head(4)
+A.df$Topic = NA # creates a new col ‘topic’, assign it to NA
+A.df$Topic[topicAssignment$index] = topicAssignment$topic
+
+```
+
+```{r}
+A.df$Topic = A.df$Topic %>% as.factor
+
+```
+
+```{r}
+ggplot(A.df, aes(x=created_at, y=Topic, col=Topic)) +
+   geom_jitter(aes(size = retweet_count)) +
+   ggtitle(paste0("Each dot is a tweet matching '",query,"'")) +
+   scale_y_discrete() +
+   scale_x_datetime(name = "") + 
+   scale_color_discrete(guide = FALSE) + 
+   scale_size_continuous(name="Retweets")
+```
+```{r}
+A.df[,list(Total.Retweets = sum(retweet_count)),by=Topic] %>% 
+   ggplot(aes(x = Topic, y = Total.Retweets)) + 
+      geom_col()
+```
+```{r}
+A.df[!is.na(Topic),
+          list(
+             TotalTweets = .N, 
+             TotalReactions=sum(retweet_count, na.rm = TRUE) + 
+                sum(favorite_count, na.rm = TRUE)+
+                sum(reply_count, na.rm = TRUE)+
+                sum(quote_count, na.rm = TRUE),
+             Reach = sum(followers_count)/10000
+             ), 
+          by = Topic] %>% 
+   melt(id.vars = "Topic") %>% 
+   ggplot(aes(x = Topic, y = value, fill=variable)) +
+      geom_bar(position="dodge", stat="identity") + 
+      scale_fill_discrete(name= "", breaks=c("TotalTweets","TotalReactions","Reach"), labels = c("Tweets","Reactions","Reach in 10,000s")) + 
+      scale_y_continuous(name = "Count")
+```
+```{r}
+dfm2 <- dfm(tokens_ngrams(TokensStemmed,n=2))
+```
+```{r}
+dfm2 <- convert(dfm2, to = "topicmodels")
+lda2 <- LDA(dfm2, k = 6, control=list(seed=123))
+terms(lda2, 8)
+```
+
+```{r}
+dfm2 <- convert(dfm2, to = "topicmodels")
+lda2 <- LDA(dfm2, k = 6, control=list(seed=123))
+terms(lda2, 8)
+```
+
+```{r}
+topicAssignment2grams = 
+   data.table(
+      index = lda2 %>% 
+         topics %>% 
+         names %>% 
+         gsub("text","", .) 
+      %>% as.integer,
+      topic = lda2 %>% topics
+   )
+A.df$Topic2gram = NA # creates a new col ‘topic’, assign it to NA
+A.df$Topic2gram[topicAssignment2grams$index] = topicAssignment2grams$topic
+A.df$Topic2gram = A.df$Topic2gram %>% as.factor
+```
+
+```{r}
+ggplot(A.df, aes(x=created_at, y=Topic2gram, col=Topic2gram)) +
+   geom_jitter(aes(size = retweet_count)) +
+   ggtitle(paste0("Each dot is a tweet matching '",query,"'")) +
+   scale_y_discrete() +
+   scale_x_datetime(name = "") + 
+   scale_color_discrete(guide = FALSE) + 
+   scale_size_continuous(name="Retweets")
+```
+```{r}
+A.df[!is.na(Topic2gram),
+          list(
+             TotalTweets = .N, 
+             TotalReactions=sum(retweet_count, na.rm = TRUE) + 
+                sum(favorite_count, na.rm = TRUE)+
+                sum(reply_count, na.rm = TRUE)+
+                sum(quote_count, na.rm = TRUE),
+             Reach = sum(followers_count)/10000
+             ), 
+          by = Topic2gram] %>% 
+   melt(id.vars = "Topic2gram") %>% 
+   ggplot(aes(x = Topic2gram, y = value, fill=variable)) +
+      geom_bar(position="dodge", stat="identity") + 
+      scale_fill_discrete(name= "", breaks=c("TotalTweets","TotalReactions","Reach"), labels = c("Tweets","Reactions","Reach in 10,000s")) + 
+      scale_y_continuous(name = "Count")
+```
+
+```{r}
+noOfTopics1gram = A.df$Topic %>% levels %>% length
+noOfTopics2gram = A.df$Topic2gram %>% levels %>% length
+topics1gram = matrix(0, nrow = dim(A.df)[1], ncol = noOfTopics1gram)
+colnames(topics1gram) = paste("Topic",1:noOfTopics1gram)
+topics2gram = matrix(0, nrow = dim(A.df)[1], ncol = noOfTopics2gram)
+colnames(topics2gram) = paste("Topic",1:noOfTopics2gram)
+for (i in 1:noOfTopics1gram) {
+   topics1gram[,i] = as.integer(A.df$Topic == i)
+}
+for (i in 1:noOfTopics2gram) {   
+   topics2gram[,i] = as.integer(A.df$Topic2gram == i)
+}
+topics1gram[is.na(topics1gram)] = 0
+topics2gram[is.na(topics2gram)] = 0
+
+diffMatrix = matrix(NA,nrow = noOfTopics1gram, ncol = noOfTopics2gram )
+for (i in 1:noOfTopics1gram) {
+   for (j in 1:noOfTopics2gram) {
+      diffMatrix[i,j] = 
+         sum(topics1gram[,i]!=topics2gram[,j])
+   }
+}
+rownames(diffMatrix) = paste("1gram Topic",1:noOfTopics1gram)
+colnames(diffMatrix) = paste("2gram Topic",1:noOfTopics2gram)
+```
+
+```{r}
+diffMatrix
+
+```
+
+```{r}
+ggplot(A.df[Topic == 1], aes(x = followers_count)) + geom_histogram(binwidth = 10) + xlim(c(0,300))
+```
+```{r}
+ggplot(A.df[Topic == 1], aes(x = account_created_at)) +
+   geom_histogram()
+```
+```{r}
+library(tidytext)
+tweet_topics <- tidy(lda, matrix = "beta") %>% as.data.table
+
+tweet_topics[order(-beta),.SD[1:3],by = topic][order(topic)]
+
+```
+
+```{r}
+library(tidytext)
+tweet_topics[order(-beta),.SD[1:10],by = topic] %>% 
+  ggplot(aes(x = reorder_within(term,beta,topic), y = beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ topic, scales = "free") +
+   scale_x_reordered() + 
+    coord_flip() + 
+   theme_minimal()
+```
+
+```{r}
+similar_wrds <- textstat_simil(dfmat_corp_twitter, 
+                               dfmat_corp_twitter[,c("hope","death")], 
+                              margin="features")
+
+head(as.matrix(similar_wrds), 10)
+```
+
+```{r}
+as.list(similar_wrds, n = 6)
+
+```
+
+```{r}
+fstat <- dfmat_corp_twitter %>% 
+   dfm_trim(min_termfreq = 0.995, termfreq_type = "quantile") %>%
+   textstat_dist(margin="features")
+```
+
+```{r}
+fstat <- dfmat_corp_twitter[1:3,] %>% dfm_trim(min_termfreq = 0.995, termfreq_type = "quantile") %>% textstat_dist(margin="features")
+``` 
+
+```{r} 
+hc <- hclust(as.dist(fstat)) 
+```
+
+```{r} 
+plot(hc, xlim = c(1, 10), ylim = c(1,8))
+```
+
+
+```{r}
+dfm_trim(min_termfreq = 0.90, termfreq_type = "quantile") %>%
+   textstat_dist(margin="features")
+```
+```{r}
+library(dendextend)
+
+```
+
+```{r}
+hc <- hclust(as.dist(fstat))
+```
+
+```{r}
+plot(hclust(as.dist(fstat)))
+
+```
+
+```{r}
+library(vosonSML)
+```
+
+```{r}
+load(file = "tweets.RProject")
+```
+
+                  
+                  
+```{r}
+class(A.df)
+
+```
+
+```{r}
+class(A.df) <- c(class(A.df),"datasource","twitter")
+class(A.df)
+```
+```{r}
+## actor network - nodes are users who have tweeted
+actorGraph <- A.df[1:1000,] %>%      # tweets data table
+   Create("actor") %>%             # Actor graph 
+   Graph()                         # igraph network graph
+```
+```{r}
+get_igraph_attrs <- function(igraph){
+   library(igraph)
+   if(!is_igraph(igraph)) stop("Not a graph object")
+   list(graph_attrs = list.graph.attributes(igraph),
+        vertex_attrs = list.vertex.attributes(igraph),
+        edge_attrs = list.edge.attributes(igraph))
+}
+
+top.ranked.users <- function(actorGraph) {
+   user.rank <- page.rank(actorGraph, directed=TRUE)
+   user.top <-sort(user.rank$vector,decreasing=TRUE,index.return=TRUE)
+   users.ranked <- V(actorGraph)$screen_name[user.top$ix]
+   return(users.ranked)
+}
+
+
+simplify.actor.network <- function(igraph,
+                                   remove.loops = TRUE,
+                                   delete.zero.degree = FALSE) {
+   library(igraph)
+   igraph = simplify(igraph, 
+                     remove.multiple = FALSE, 
+                     remove.loops = remove.loops,
+                     edge.attr.comb = "max")
+   if (delete.zero.degree) {
+      igraph=delete.vertices(simplify(igraph), degree(igraph)==0)
+   }
+   return(igraph)
+}
+
+# Plot medium sized networks with reasonable defaults.
+plot.actor.Graph <- function(igraph, layout = layout_with_fr(igraph, niter = 1000),
+    ## aspect ratio =================================
+    asp = 0,
+    ## labels =======================================
+    ## colors =======================================
+    vertex.color = rgb(0.33,0.33,0.33,0.5),      ## grey with opacity 30%
+    vertex.frame.color = rgb(1.00,1.00,1.00,1), ## white border color no opacity
+    ## shapes =======================================
+    vertex.shape = "circle",      ## none, circle, square, csquare, 
+                                  ## vrectangle, pie, raster, sphere
+                                  ## rectangle, crectangle
+    ## sizes =======================================
+    vertex.size = 2.1,             ## size, default = 15
+    vertex.size2 = NA,             ## second dimension size (for parallelograms)
+    ## edges =======================================
+    edge.color = rgb(0.5,0.5,0.5,0.5),      ## darkgrey with opacity 30%
+    edge.width = 0.5,             ## default = 1
+    edge.arrow.size = 0.2,        ## default = 1
+    edge.arrow.width = 0.5,       ## default = 1
+    edge.lty = "solid",           ## linetype: blank, solid, dashed, dotted,
+                                  ## dotdash, longdash, or twodash
+    edge.curved = 0.15,           ## 0 to 1 or TRUE (0.5)
+    ...) {
+   y = list(...)
+   if (length(y)==0) {plot.igraph(igraph, layout= layout, asp = asp, vertex.color = vertex.color, vertex.frame.color = vertex.frame.color,vertex.shape =vertex.shape,vertex.size = vertex.size, vertex.size2 = vertex.size2, edge.color = edge.color, edge.width = edge.width,  edge.arrow.size = edge.arrow.size, edge.arrow.width = edge.arrow.width, edge.lty = edge.lty, edge.curved = edge.curved) }
+   else {plot.igraph(igraph, vertex.label = y$vertex.label, layout= layout, asp = asp, vertex.color = vertex.color, vertex.frame.color = vertex.frame.color,vertex.shape =vertex.shape,vertex.size = vertex.size, vertex.size2 = vertex.size2, edge.color = edge.color, edge.width = edge.width,  edge.arrow.size = edge.arrow.size, edge.arrow.width = edge.arrow.width, edge.lty = edge.lty, edge.curved = edge.curved) }
+}
+
+label.user.network <- function(actorGraph , named.users) {
+   V(actorGraph)$label <- V(actorGraph)$screen_name
+   V(actorGraph)$label[which(!V(actorGraph)$label %in% named.users)] <- NA
+   return(actorGraph)
+}
+
+neighborhood.to.user <- function(actorGraph, screen_name, k.nearest.neighbours = 1) {
+   index <- which(V(actorGraph)$screen_name==screen_name)
+   neigborhood.of.index <- neighborhood(actorGraph,order = k.nearest.neighbours, nodes = index)
+   v.index <- c(unlist(neigborhood.of.index),index)
+   
+   partialGraph <- induced_subgraph(actorGraph,v.index)
+   return(partialGraph)
+}
+
+
+
+```
+
+```{r}
+get_igraph_attrs(actorGraph)
+```
+
+```{r}
+actorGraph.simplyfied = simplify.actor.network(actorGraph, remove.loops = TRUE, delete.zero.degree = TRUE)
+```
+
+```{r}
+grep("^layout_with_.*[^[sugiyama]]*", ls("package:igraph"), value = TRUE) %>%  print
+```
+
+```{r}
+plot.actor.Graph(actorGraph.simplyfied, 
+                  vertex.label = NA, 
+                  layout = layout_with_graphopt)
+```
+
+```{r}
+top.ranked.users(actorGraph.simplyfied)[1:15]
+```
+```{r}
+named.users = top.ranked.users(actorGraph.simplyfied)[1:15]
+
+```
+
+```{r}
+actorGraph.named = label.user.network(actorGraph.simplyfied,
+                                      named.users)
+plot.actor.Graph(actorGraph.named,layout = layout_with_kk)
+```
+```{r}
+library(sentimentr)
+
+```
+
+```{r}
+df <- A.df[,.(created_at,text,Topic)]
+
+```
+
+```{r}
+library(sentimentr)
+
+```
+
+```{r}
+df <- A.df[,.(created_at,text,Topic)]
+
+```
+
+```{r}
+df$roundTime <- as.POSIXct(cut(df$created_at, breaks = "5 mins"))
+```
+
+```{r}
+df$roundTime <- df$created_at %>% # select created_at column
+   cut(breaks = "5 mins") %>%     # cut every 5 min and group
+   as.POSIXct                     # as posix clock time
+```
+
+```{r}
+df$text[1]
+```
+
+```{r}
+df$text[1] %>% get_sentences 
+```
+
+```{r}
+df$text[1] %>% get_sentences %>% sentiment
+```
+
+```{r}
+df$text[1] %>% get_sentences %>% sentiment_by
+
+```
+
+```{r}
+sentiment_by_tweet = 
+   df[,
+      list(text %>% get_sentences %>% sentiment_by(),
+           Topic)]
+# In df:
+#   select all rows
+#          send text column to function get_sentences, then to
+#          sentiment_by as above
+
+sentiment_by_tweet
+```
+```{r}
+sentiment_by_Topic = 
+   sentiment_by_tweet[, list(Tweets = .N,
+           ave_sentiment = mean(ave_sentiment),
+           sd_sentiment = sd(ave_sentiment),
+           Total_word_count = sum(word_count)),
+      by = Topic]
+sentiment_by_Topic
+```
+
+```{r}
+t.test(sentiment_by_tweet[Topic ==1,ave_sentiment], sentiment_by_tweet[Topic ==2,ave_sentiment])
+```
+
+```{r}
+mean(sentiment_by_tweet$ave_sentiment)
+```
+
+```{r}
+df$polarity_score = sentiment_by_tweet$ave_sentiment
+```
+
+```{r}
+ggplot(df,aes(x=roundTime, y=polarity_score, fill=roundTime)) + 
+   geom_boxplot()
+```
+```{r}
+df$roundTime <- as.factor(df$roundTime)
+```
+
+```{r}
+ggplot(df,aes(x=roundTime, y=polarity_score, fill = roundTime)) + 
+   geom_boxplot() +
+   guides(fill=FALSE) + 
+   theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+```{r}
+ggplot(df,aes(x=created_at, y=polarity_score,col=roundTime)) + 
+   geom_point(size=0.4, alpha=0.9) + 
+   theme(legend.position="none")
+```
+
+```{r}
+A.df[Topic == 1,.(text)] %>% 
+   head #show the first 6 lines
+```
+
+```{r}
+A.df[Topic == 1,.(text)] %>% 
+   get_sentences() %>% #extract all sentences
+   head  # show the first 6
+```
+```{r}
+A.df[Topic == 1,.(text)] %>% 
+   get_sentences() %>%              # get sentences
+   extract_sentiment_terms() %>%    # extract negative terms
+   .[,negative] %>%                 # select the negative colum
+   head                             # show first six elements 
+```
+```{r}
+A.df[Topic == 1,.(text),] %>% 
+   get_sentences() %>%              # get sentences
+   extract_sentiment_terms() %>%    # extract negative terms
+   .[,negative] %>%                 # select the negative colum
+   unlist %>%                       # unlist
+   table  %>%                       # create freq table
+   sort(decreasing = TRUE)
+```
+```{r}
+A.df[,list(text),] %>% 
+   get_sentences() %>%              # get sentences
+   extract_sentiment_terms() %>%    # extract negative terms
+   .[,negative] %>%                 # select the negative colum
+   unlist %>%                       # unlist
+   table  %>%                       # create freq table
+   sort(decreasing = TRUE) %>% 
+   head(10) %>% 
+   as.data.frame.table
+```
+```{r}
+A.df[Topic == 2,.(text),] %>% 
+   get_sentences() %>%              # get sentences
+   extract_sentiment_terms() %>%    # extract negative terms
+   .[,positive] %>%                 # select the negative colum
+   unlist %>%                       # unlist
+   table  %>%                       # create freq table
+   sort(decreasing = TRUE) %>% 
+   head(10) %>% 
+   as.data.frame.table
+
+```
+```{r}
+topics= unique(A.df$Topic)
+topics
+```
+```{r}
+topics = topics[!is.na(topics)]
+topics
+```
+
+```{r}
+max_terms = 10
+
+for (i in topics) {
+   neg <- A.df %>% subset(Topic == i) %>% 
+      .[,text] %>% unlist() %>% 
+      extract_sentiment_terms() %>% .[,negative] %>% unlist
+   
+   pos <- A.df %>% subset(Topic == i) %>% 
+      .[,text] %>% unlist() %>% 
+      extract_sentiment_terms() %>% .[,positive] %>% unlist
+   
+   pos <- sort(table(pos), decreasing = TRUE)
+   # this is the same thing if you want to use pipes:
+   #pos %>% table %>% sort(decreasing = TRUE)
+   
+   neg <- sort(table(neg), decreasing = TRUE)
+   
+   print(paste("Topic",i))
+   print(pos[1:min(max_terms,length(pos))])
+   
+   print(neg[1:min(max_terms,length(neg))])
+   print("------------------------------------------------")
+}
+```
+```{r}
+
+```
+
